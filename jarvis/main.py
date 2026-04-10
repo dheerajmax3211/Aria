@@ -242,10 +242,10 @@ def main():
     tools_description = tool_registry.get_tool_descriptions()
     tool_instruction = (
         f"\n\nYou have access to these tools:\n{tools_description}\n\n"
-        "To use a tool, include this format in your response: [TOOL:tool_name(key=value)]\n"
+        "To use a tool, include THIS format in your response with valid JSON arguments inside the parentheses: [TOOL:tool_name({\"key\": \"value\"})]\n"
         "Examples:\n"
-        "- [TOOL:open_app(app_name='notepad')]\n"
-        "- [TOOL:run_command(command='dir')]\n"
+        "- [TOOL:open_app({\"app_name\": \"notepad\"})]\n"
+        "- [TOOL:run_command({\"command\": \"dir\"})]\n"
         "- [TOOL:get_weather()]\n"
         "You can use multiple tools. After using tools, provide a natural spoken response."
     )
@@ -357,7 +357,7 @@ def main():
 
             short_term.add("user", text)
 
-            route = router.route(text, [{"name": name} for name in tool_registry.tools.keys()])
+            route = router.route(text, [{"name": name, "description": val["description"], "parameters": val["parameters"]} for name, val in tool_registry.tools.items()])
             intent = route.get("tool", "chat")
             args = route.get("args", {})
 

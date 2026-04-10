@@ -37,16 +37,33 @@ class ToolRegistry:
             return f"Tool '{tool_name}' failed: {e}"
 
     def parse_tool_calls(self, response: str) -> list[dict]:
+        import ast
         pattern = r'\[TOOL:([a-z_]+)\((.*?)\)\]'
         matches = re.findall(pattern, response, re.DOTALL)
         calls = []
         for name, args_str in matches:
             name = name.strip()
+            args_str = args_str.strip()
+            if not args_str:
+                calls.append({"tool": name, "args": {}})
+                continue
+            
             try:
-                args = json.loads(f"{{{args_str.strip()}}}")
+                args = json.loads(args_str)
             except json.JSONDecodeError:
-                args = {"text": args_str.strip()}
-            calls.append({"tool": name, "args": args})
+                try:
+                    if "=" in args_str and not args_str.startswith("{"):
+                        parts = args_str.split("=", 1)
+                        key = parts[0].strip()
+                        val = ast.literal_eval(parts[1].strip())
+                        args = {key: val}
+                    else:
+                        args = ast.literal_eval(args_str)
+                        if not isinstance(args, dict):
+                            args = {"text": str(args)}
+                except Exception:
+                    args = {"text": args_str}
+            calls.append({"tool": name, "args": args if isinstance(args, dict) else {}})
         return calls
 
     def clean_response(self, response: str) -> str:

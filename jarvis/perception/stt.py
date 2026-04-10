@@ -46,10 +46,22 @@ class SpeechToText:
             segments, info = self.model.transcribe(
                 audio_float32,
                 beam_size=5,
-                language=None,
+                language="en",
+                vad_filter=True,
+                condition_on_previous_text=False,
+                initial_prompt="Jarvis, WhatsApp, YouTube, Chrome, Spotify, Web, Message, Open, Close, App"
             )
             text = " ".join(segment.text for segment in segments).strip()
             logger.info(f"Transcribed: '{text}' (lang: {info.language}, prob: {info.language_probability:.2f})")
+            
+            if info.language_probability < 0.6 or not text or len(text.strip()) < 2:
+                logger.debug("Transcription discarded (low probability or empty)")
+                return ""
+                
+            if len(set(text.lower().split())) <= 1 and len(text.split()) > 3:
+                logger.debug("Transcription discarded (repeated hallucination)")
+                return ""
+                
             return text
         except Exception as e:
             logger.error(f"Transcription failed: {e}")

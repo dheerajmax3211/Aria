@@ -10,24 +10,32 @@ class IntentRouter:
         self._system_prompt = (
             "You are an intent classifier. Given a user message, determine which tool or agent should handle it.\n"
             "Respond with ONLY a JSON object: {\"tool\": \"tool_name\", \"args\": {\"key\": \"value\"}}\n"
-            "If the user is asking a simple question (greeting, calculation, general knowledge), respond with {\"tool\": \"chat\", \"args\": {\"message\": \"user_message\"}}\n"
+            "If the user is asking a basic conversation question (greeting, local memory), respond with {\"tool\": \"chat\", \"args\": {\"message\": \"user_message\"}}\n"
+            "If the user is asking a question that requires external facts, live internet data, news, research, or general knowledge, ALWAYS use a web search tool like 'web_search'.\n"
             "If the user wants a multi-step task, respond with {\"tool\": \"plan\", \"args\": {\"task\": \"full_task_description\"}}\n"
-            "Available tools: {tools}\n"
+            "Available tools and their REQUIRED parameters:\n{tools}\n\n"
+            "CRITICAL: You MUST use ONLY the exact parameter keys listed for the tool you select! Do not invent parameter names.\n"
             "Always respond with valid JSON only. No markdown, no explanation."
         )
 
     def route(self, user_message: str, available_tools: list[dict]) -> dict:
-        tool_list = ", ".join(t["name"] for t in available_tools)
+        tool_list = "\n".join(f"- {t['name']}({', '.join(t.get('parameters', []))}): {t.get('description', '')}" for t in available_tools)
         system_prompt = self._system_prompt.replace("{tools}", tool_list)
 
         try:
             response = self.llm.chat(user_message, system_prompt=system_prompt)
             cleaned = response.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
+            
+            import re
+            json_match = re.search(r'\{.*\}', cleaned, re.DOTALL)
+            if json_match:
+                cleaned = json_match.group(0)
+                
             result = json.loads(cleaned)
             logger.info(f"Router: intent='{result.get('tool', 'unknown')}' for '{user_message[:50]}...'")
             return result
         except json.JSONDecodeError as e:
-            logger.warning(f"Router JSON parse failed: {e}, defaulting to chat")
+            logger.warning(f"Router JSON parse failed: {e}, defaulting to chat. Output was: {cleaned[:100]}")
             return {"tool": "chat", "args": {"message": user_message}}
         except Exception as e:
             logger.error(f"Router failed: {e}, defaulting to chat")

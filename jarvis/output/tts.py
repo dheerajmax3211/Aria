@@ -47,6 +47,10 @@ class TextToSpeech:
         text = text.replace('%', ' percent')
         text = text.replace('&', ' and ')
         text = text.replace('/', ' or ')
+        
+        # Strip all emojis, colons, brackets, and markdown artifacts
+        text = re.sub(r'[^\w\s.,!?\'-]', '', text)
+        
         text = re.sub(r'\s+', ' ', text).strip()
         return text
 

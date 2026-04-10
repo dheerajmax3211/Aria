@@ -39,7 +39,16 @@ class LLMCore:
                 model=self.local_model,
                 messages=messages,
             )
-            text = response["message"]["content"].strip()
+            raw_text = response["message"]["content"].strip()
+            
+            import re
+            think_match = re.search(r'<think>(.*?)</think>', raw_text, re.DOTALL)
+            if think_match:
+                think_content = think_match.group(1).strip()
+                logger.info(f"LLM Reasoning ({len(think_content)} chars): {think_content[:100]}...")
+            
+            text = re.sub(r'<think>.*?</think>', '', raw_text, flags=re.DOTALL).strip()
+            
             logger.info(f"LLM (Ollama/{self.local_model}) response ({len(text)} chars): {text[:100]}...")
             return text
         except Exception as e:

@@ -13,7 +13,19 @@ class ComputerControlAgent:
     def open_application(self, app_name: str) -> str:
         try:
             if os.name == "nt":
-                os.startfile(app_name)
+                try:
+                    os.startfile(app_name)
+                except FileNotFoundError:
+                    # Windows Native Search Fallback for fuzzy matching
+                    logger.info(f"Direct executable '{app_name}' not found, falling back to Windows Search...")
+                    import pyautogui
+                    import time
+                    pyautogui.press("win")
+                    time.sleep(0.5)
+                    pyautogui.write(app_name, interval=0.01)
+                    time.sleep(0.5)
+                    pyautogui.press("enter")
+                    return f"Triggered Windows Search for {app_name}"
             else:
                 subprocess.Popen(["open", app_name])
             logger.info(f"Opened application: {app_name}")
