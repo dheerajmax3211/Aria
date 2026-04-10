@@ -88,7 +88,12 @@ class WakeWordDetector:
 
             logger.info(f"Listening for wake word: '{self.wake_word}'")
 
+            detected = False
+
             def audio_callback(indata, frames, time_info, status):
+                nonlocal detected
+                if detected:
+                    return
                 if status:
                     logger.warning(f"Audio callback status: {status}")
                 audio_chunk = indata.copy().flatten()
@@ -96,23 +101,18 @@ class WakeWordDetector:
                 for model_name, score in prediction.items():
                     if score > 0.5:
                         logger.info(f"Wake word detected: '{model_name}' (confidence: {score:.3f})")
-                        raise WakeWordDetected()
+                        detected = True
 
-            class WakeWordDetected(Exception):
-                pass
-
-            try:
-                with sd.InputStream(
-                    samplerate=self.sample_rate,
-                    channels=1,
-                    blocksize=self.chunk_size,
-                    dtype=np.int16,
-                    callback=audio_callback,
-                ):
-                    while True:
-                        sd.sleep(50)
-            except WakeWordDetected:
-                return True
+            with sd.InputStream(
+                samplerate=self.sample_rate,
+                channels=1,
+                blocksize=self.chunk_size,
+                dtype=np.int16,
+                callback=audio_callback,
+            ):
+                while not detected:
+                    sd.sleep(50)
+            return True
         except Exception as e:
             logger.error(f"Failed to load openWakeWord: {e}")
             raise
