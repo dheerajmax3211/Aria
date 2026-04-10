@@ -1,0 +1,49 @@
+# Phase 1: Core dependencies
+faster-whisper>=1.0.0
+elevenlabs>=1.5.0
+edge-tts>=7.0.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+loguru>=0.7.0
+sounddevice>=0.4.6
+numpy>=1.24.0
+scipy>=1.11.0
+noisereduce>=3.0.0
+requests>=2.31.0
+ollama>=0.1.6
+
+# Phase 2: Wake word
+# openWakeWord>=1.0.0
+# pvporcupine>=3.0.0
+
+# Phase 3: Memory
+# chromadb>=0.4.0
+
+# Phase 4: Scheduler + Weather
+# APScheduler>=3.10.0
+
+# Phase 5: Computer control
+# pyautogui>=0.9.54
+# pygetwindow>=0.0.9
+
+# Phase 6: Google APIs
+# google-api-python-client>=2.100.0
+# google-auth-httplib2>=0.1.0
+# google-auth-oauthlib>=1.1.0
+
+# Phase 7: Messaging
+# python-telegram-bot>=20.0
+# playwright>=1.40.0
+
+# Phase 8: Git + GitHub
+# gitpython>=3.1.0
+
+# Phase 9: Web automation
+# playwright>=1.40.0
+
+# Phase 10: LangGraph
+# langgraph>=0.0.20
+
+# Phase 11: HUD
+# PyQt6>=6.6.0

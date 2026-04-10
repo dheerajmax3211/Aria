@@ -1,0 +1,32 @@
+# Environment files
+.env
+.env.*
+
+# Virtual Environments
+venv/
+.venv/
+env/
+__pycache__/
+*.pyc
+*.pyo
+
+# Logs
+logs/
+*.log
+
+# Data store
+*.db
+chroma_db/
+user_profile.json
+
+# Exclude sensitive keys/credentials
+CREDENTIALS.md
+
+# Web & Build
+node_modules/
+build/
+dist/
+
+# OS Specific
+.DS_Store
+Thumbs.db
