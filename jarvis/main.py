@@ -19,8 +19,7 @@ from jarvis.brain.architect import ArchitectAgent
 from jarvis.brain.emotional_intelligence import EmotionalIntelligence
 from jarvis.memory.journal import Journal
 from jarvis.memory.short_term import ShortTermMemory
-from jarvis.memory.long_term import LongTermMemory
-from jarvis.memory.episodic import EpisodicMemory
+from jarvis.memory.graph_memory import GraphMemoryAgent
 from jarvis.memory.user_profile import UserProfile
 from jarvis.agents.weather_agent import WeatherAgent
 from jarvis.agents.computer_control import ComputerControlAgent
@@ -67,8 +66,7 @@ def main():
     mute_detector = MuteDetector()
 
     short_term = ShortTermMemory(max_turns=20)
-    long_term = LongTermMemory()
-    episodic = EpisodicMemory()
+    graph_memory = GraphMemoryAgent()
     user_profile = UserProfile()
     journal = Journal()
     emotional = EmotionalIntelligence(journal=journal)
@@ -78,7 +76,7 @@ def main():
     file_agent = FileAgent()
     google_agent = GoogleAgent()
 
-    context_builder = ContextBuilder(user_profile, short_term, long_term, episodic, journal, emotional, weather_agent, google_agent)
+    context_builder = ContextBuilder(user_profile, short_term, graph_memory, journal, emotional, weather_agent, google_agent)
     messaging_agent = MessagingAgent(llm=llm)
     dev_agent = DevAgent()
     git_agent = GitAgent()
@@ -185,6 +183,8 @@ def main():
     tool_registry.register_tool("set_mood", journal.set_mood, "Log current mood", ["mood", "notes"])
     tool_registry.register_tool("get_mood_trend", emotional.get_mood_summary, "Get mood trend summary", [])
     tool_registry.register_tool("add_journal_note", journal.add_note, "Add a note to today's journal", ["note"])
+    tool_registry.register_tool("remember_fact", graph_memory.store_background, "Explicitly save an important fact, note, or preference to long-term memory for later recall.", ["text"])
+    tool_registry.register_tool("search_memory", graph_memory.recall_timeline, "Search long-term memory for previously stored facts or temporal details.", ["query"])
 
     router = IntentRouter(llm)
     planner = TaskPlanner(llm, tool_registry)
@@ -200,7 +200,7 @@ def main():
         logger.warning(f"Could not auto-open HUD: {e}")
 
     scheduler = SchedulerJobs()
-    briefing = BriefingGenerator(weather_agent, episodic, user_profile)
+    briefing = BriefingGenerator(weather_agent, graph_memory, user_profile)
 
     tool_registry.register_tool("send_whatsapp_media", messaging_agent.send_whatsapp_media, "Send media (photo/video/document) via WhatsApp", ["contact_name", "file_path", "caption"])
     tool_registry.register_tool("send_telegram_media", messaging_agent.send_telegram_media, "Send media via Telegram", ["chat_id", "file_path", "caption", "media_type"])
@@ -217,14 +217,14 @@ def main():
         text = briefing.generate_morning_briefing()
         if text:
             tts.speak(text, tone="calm")
-            episodic.log_task("Morning briefing", result="delivered", agent="scheduler")
+            graph_memory.store_background("Delivered morning briefing.")
 
     def evening_summary():
         logger.info("Running evening summary")
         text = briefing.generate_evening_summary()
         if text:
             tts.speak(text, tone="calm")
-            episodic.log_task("Evening summary", result="delivered", agent="scheduler")
+            graph_memory.store_background("Delivered evening summary.")
 
     morning_hour, morning_minute = map(int, settings.morning_briefing_time.split(":"))
     evening_hour, evening_minute = map(int, settings.evening_summary_time.split(":"))
@@ -357,7 +357,7 @@ def main():
 
             short_term.add("user", text)
 
-            route = router.route(text, [{"name": name, "description": val["description"], "parameters": val["parameters"]} for name, val in tool_registry.tools.items()])
+            route = router.route(text, [{"name": name, "description": val["description"], "parameters": val["parameters"]} for name, val in tool_registry.tools.items()], conversation_history=short_term.get_history()[:-1])
             intent = route.get("tool", "chat")
             args = route.get("args", {})
 
@@ -380,9 +380,11 @@ def main():
             else:
                 result = tool_registry.execute_tool(intent, **args)
                 hud.update_status("speaking")
+                conversation_history = short_term.get_history()[:-1]
                 response = llm.chat(
                     f"Tool '{intent}' returned: {result}\n\nProvide a natural spoken response.",
                     system_prompt=llm.system_prompt,
+                    conversation_history=conversation_history
                 )
 
             tool_calls = tool_registry.parse_tool_calls(response)
@@ -392,7 +394,7 @@ def main():
                 for call in tool_calls:
                     result = tool_registry.execute_tool(call["tool"], **call["args"])
                     tool_results.append(f"{call['tool']}: {result}")
-                    episodic.log_task(f"Tool: {call['tool']}", result=str(result)[:200], agent="tool_registry")
+                    graph_memory.store_background(f"Executed tool: {call['tool']} with result: {str(result)[:200]}")
 
                 if tool_results:
                     tool_context = "\n".join(tool_results)
@@ -417,10 +419,7 @@ def main():
             tts.speak(clean_response, tone=tone)
 
             if len(text) > 20:
-                long_term.add_memory(
-                    text=f"User: {text} | {settings.jarvis_name}: {clean_response}",
-                    metadata={"timestamp": datetime.now().isoformat()},
-                )
+                graph_memory.store_background(f"User: {text} | ARIA: {clean_response}")
                 journal.log_conversation(text, clean_response)
 
             hud.update_status("idle")
@@ -433,7 +432,7 @@ def main():
                     f"Here's what the Architect delivered:\n\n{architect_result[:500]}..."
                 )
                 tts.speak(completion_msg, tone="happy")
-                episodic.log_task("Architect task completed", result=architect_result[:500], agent="architect")
+                graph_memory.store_background(f"Architect task completed: {architect_result[:500]}")
 
         except KeyboardInterrupt:
             shutdown(None, None)

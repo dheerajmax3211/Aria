@@ -18,12 +18,16 @@ class IntentRouter:
             "Always respond with valid JSON only. No markdown, no explanation."
         )
 
-    def route(self, user_message: str, available_tools: list[dict]) -> dict:
+    def route(self, user_message: str, available_tools: list[dict], conversation_history: list[dict] = None) -> dict:
         tool_list = "\n".join(f"- {t['name']}({', '.join(t.get('parameters', []))}): {t.get('description', '')}" for t in available_tools)
         system_prompt = self._system_prompt.replace("{tools}", tool_list)
 
+        if conversation_history:
+            history_text = "\n".join([f"{h['role']}: {h['content']}" for h in conversation_history[-4:]])
+            system_prompt += f"\n\nCRITICAL CONTEXT (Last few dialogue turns for reference):\n{history_text}\nHINT: Use this context to understand what the user means if they are correcting a mistake or following up."
+
         try:
-            response = self.llm.chat(user_message, system_prompt=system_prompt)
+            response = self.llm.chat_cloud_fast(user_message, system_prompt=system_prompt)
             cleaned = response.strip().lstrip("```json").lstrip("```").rstrip("```").strip()
             
             import re

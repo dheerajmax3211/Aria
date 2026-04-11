@@ -25,6 +25,9 @@ class Settings(BaseSettings):
     ollama_base_url: str = Field(default="http://localhost:11434")
     ollama_model: str = Field(default="deepseek-r1:8b")
     claude_api_key: str = Field(default="")
+    gemini_api_key: str = Field(default="")
+    fast_cloud_model: str = Field(default="gemini-2.5-flash")
+    reasoning_model: str = Field(default="gemini-2.5-pro")
     llm_mode: str = Field(default="local")
 
     # Architect (OpenRouter)

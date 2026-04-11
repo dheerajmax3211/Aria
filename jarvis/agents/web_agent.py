@@ -9,19 +9,16 @@ class WebAgent:
 
     def search(self, query: str, num_results: int = 5) -> str:
         try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
-                page.goto(f"https://www.google.com/search?q={query}", wait_until="networkidle")
-                results = page.query_selector_all("div.g")
-                output = []
-                for r in results[:num_results]:
-                    title_el = r.query_selector("h3")
-                    link_el = r.query_selector("a")
-                    if title_el and link_el:
-                        output.append(f"{title_el.inner_text()}: {link_el.get_attribute('href')}")
-                browser.close()
-                return "\n".join(output) if output else "No results found"
+            from ddgs import DDGS
+            results = DDGS().text(query, max_results=num_results)
+            output = []
+            for r in results:
+                title = r.get("title", "")
+                link = r.get("href", "")
+                snippet = r.get("body", "")
+                if title and link:
+                    output.append(f"{title}: {link}\n  Snippet: {snippet}")
+            return "\n\n".join(output) if output else "No results found"
         except Exception as e:
             return f"Web search failed: {e}"
 

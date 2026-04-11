@@ -13,6 +13,12 @@ class ComputerControlAgent:
     def open_application(self, app_name: str) -> str:
         try:
             if os.name == "nt":
+                # First try native cmd start which handles App Paths (e.g. 'chrome' -> 'chrome.exe')
+                result = subprocess.run(f'start "" "{app_name}"', shell=True, capture_output=True, text=True)
+                if result.returncode == 0:
+                    logger.info(f"Opened application via start command: {app_name}")
+                    return f"Opened {app_name}"
+                
                 try:
                     os.startfile(app_name)
                 except FileNotFoundError:
@@ -149,11 +155,12 @@ class ComputerControlAgent:
         except Exception as e:
             return f"Failed to press key: {e}"
 
-    def hotkey(self, *keys: str) -> str:
+    def hotkey(self, keys: str) -> str:
         try:
-            pyautogui.hotkey(*keys)
-            logger.info(f"Hotkey: {'+'.join(keys)}")
-            return f"Pressed {'+'.join(keys)}"
+            key_list = [k.strip() for k in keys.split("+")]
+            pyautogui.hotkey(*key_list)
+            logger.info(f"Hotkey: {'+'.join(key_list)}")
+            return f"Pressed {'+'.join(key_list)}"
         except Exception as e:
             return f"Failed to press hotkey: {e}"
 

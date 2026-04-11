@@ -3,11 +3,10 @@ from loguru import logger
 
 
 class ContextBuilder:
-    def __init__(self, user_profile, short_term_memory, long_term_memory, episodic_memory, journal=None, emotional=None, weather_agent=None, google_agent=None):
+    def __init__(self, user_profile, short_term_memory, graph_memory=None, journal=None, emotional=None, weather_agent=None, google_agent=None):
         self.user_profile = user_profile
         self.short_term = short_term_memory
-        self.long_term = long_term_memory
-        self.episodic = episodic_memory
+        self.graph_memory = graph_memory
         self.journal = journal
         self.emotional = emotional
         self.weather_agent = weather_agent
@@ -27,12 +26,6 @@ class ContextBuilder:
         facts = self.user_profile.get_facts()
         if facts:
             context_parts.append(f"Things you know about the user: {'; '.join(facts)}")
-
-        projects = self.user_profile.get_projects()
-        if projects:
-            context_parts.append("Active projects:")
-            for name, info in projects.items():
-                context_parts.append(f"  - {name}: {info.get('tech_stack', 'unknown stack')}, last active: {info.get('last_active', 'unknown')}")
 
         if self.weather_agent:
             try:
@@ -63,18 +56,11 @@ class ContextBuilder:
             for turn in recent:
                 context_parts.append(f"  {turn['role']}: {turn['content']}")
 
-        if user_query and self.long_term.memory_count > 0:
-            memories = self.long_term.query(user_query, n_results=3)
-            if memories:
-                context_parts.append("Relevant past memories:")
-                for m in memories:
-                    context_parts.append(f"  - {m['content']}")
-
-        recent_tasks = self.episodic.get_recent_tasks(n=3)
-        if recent_tasks:
-            context_parts.append("Recent tasks completed:")
-            for task in recent_tasks:
-                context_parts.append(f"  - {task['task_description']}")
+        if user_query and self.graph_memory:
+            # Query the Knowledge Graph for contextual relevance to the user's current intent
+            memories = self.graph_memory.recall_timeline(user_query)
+            if memories and "Knowledge graph is offline" not in memories and "No specific graph" not in memories:
+                context_parts.append(f"Relevant Memory Graph Data:\n{memories}")
 
         return "\n".join(context_parts)
 

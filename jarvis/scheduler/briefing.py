@@ -7,9 +7,9 @@ from jarvis.config import settings
 
 
 class BriefingGenerator:
-    def __init__(self, weather_agent=None, episodic_memory=None, user_profile=None):
+    def __init__(self, weather_agent=None, graph_memory=None, user_profile=None):
         self.weather_agent = weather_agent
-        self.episodic = episodic_memory
+        self.graph_memory = graph_memory
         self.user_profile = user_profile
         self.db_path = "data/jarvis.db"
         self._init_reminders_table()
@@ -98,12 +98,10 @@ class BriefingGenerator:
             for r in reminders:
                 parts.append(r["message"])
 
-        if self.episodic:
-            recent_tasks = self.episodic.get_recent_tasks(n=3)
-            if recent_tasks:
-                parts.append("Here's what you worked on recently:")
-                for task in recent_tasks:
-                    parts.append(task["task_description"])
+        if self.graph_memory:
+            recent_tasks = self.graph_memory.recall_timeline("what did I do recently")
+            if recent_tasks and "offline" not in recent_tasks and "No specific" not in recent_tasks:
+                parts.append(f"Here's what you worked on recently:\n{recent_tasks[:200]}")
 
         parts.append("How can I help you today?")
 
@@ -121,16 +119,12 @@ class BriefingGenerator:
             for sub in upcoming_subs:
                 parts.append(f"{sub['name']} on {sub['next_due']}, ${sub['amount']}")
 
-        if self.episodic:
-            today = now.strftime("%Y-%m-%d")
-            recent_tasks = self.episodic.get_recent_tasks(n=5)
-            today_tasks = [t for t in recent_tasks if t["timestamp"].startswith(today)]
-            if today_tasks:
-                parts.append(f"You completed {len(today_tasks)} tasks today:")
-                for task in today_tasks:
-                    parts.append(task["task_description"])
+        if self.graph_memory:
+            recent_tasks = self.graph_memory.recall_timeline("what did I do today")
+            if recent_tasks and "offline" not in recent_tasks and "No specific" not in recent_tasks:
+                parts.append(f"Here is a summary of your activities today:\n{recent_tasks[:300]}")
             else:
-                parts.append("No tasks were completed today.")
+                parts.append("No tasks were recorded today.")
 
         parts.append("Have a good evening.")
 

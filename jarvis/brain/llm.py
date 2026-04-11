@@ -1,6 +1,9 @@
 import ollama
 import requests
+import re
 from loguru import logger
+from google import genai
+from pydantic import BaseModel
 
 from jarvis.config import settings
 
@@ -9,6 +12,13 @@ class LLMCore:
     def __init__(self):
         self.client = ollama.Client(host=settings.ollama_base_url)
         self.local_model = settings.ollama_model
+        
+        self.gemini_client = None
+        if settings.gemini_api_key:
+            self.gemini_client = genai.Client(api_key=settings.gemini_api_key)
+        self.fast_cloud_model = settings.fast_cloud_model
+        self.reasoning_model = settings.reasoning_model
+            
         self.system_prompt = ""
         self._load_system_prompt()
 
@@ -28,12 +38,15 @@ class LLMCore:
             messages.extend(conversation_history)
         messages.append({"role": "user", "content": user_message})
 
-        if use_cloud and settings.claude_configured:
+        if use_cloud and self.gemini_client:
+            return self.chat_cloud_fast(user_message, system_prompt, conversation_history)
+        elif use_cloud and settings.claude_configured:
             return self._call_claude(messages)
 
-        return self._call_ollama(messages)
-
-    def _call_ollama(self, messages: list[dict]) -> str:
+        return self.chat_local(messages)
+    
+    def chat_local(self, messages: list[dict]) -> str:
+        """Strictly forces interaction over local Ollama model."""
         try:
             response = self.client.chat(
                 model=self.local_model,
@@ -41,7 +54,6 @@ class LLMCore:
             )
             raw_text = response["message"]["content"].strip()
             
-            import re
             think_match = re.search(r'<think>(.*?)</think>', raw_text, re.DOTALL)
             if think_match:
                 think_content = think_match.group(1).strip()
@@ -53,10 +65,73 @@ class LLMCore:
             return text
         except Exception as e:
             logger.error(f"Ollama call failed: {e}")
-            if settings.claude_configured:
-                logger.info("Falling back to Claude API")
-                return self._call_claude(messages)
-            return "I'm having trouble connecting to my brain. Please try again."
+            if self.gemini_client:
+                return self.chat_cloud_fast(messages[-1]["content"], messages[0]["content"], messages[1:-1])
+            return "I'm having trouble connecting to my brain. Please check Ollama."
+
+    def _convert_to_gemini_format(self, messages: list[dict]):
+        system_instruction = ""
+        contents = []
+        for m in messages:
+            if m["role"] == "system":
+                system_instruction = m["content"]
+            else:
+                role = "user" if m["role"] == "user" else "model"
+                contents.append({"role": role, "parts": [{"text": m["content"]}]})
+        return system_instruction, contents
+
+    def chat_cloud_fast(self, user_message: str, system_prompt: str | None = None, conversation_history: list[dict] | None = None) -> str:
+        """Hits Gemini Flash for rapid classification or background processing."""
+        if not self.gemini_client:
+            return self.chat(user_message, system_prompt, conversation_history)
+            
+        prompt = system_prompt or self.system_prompt
+        messages = [{"role": "system", "content": prompt}]
+        if conversation_history:
+            messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_message})
+        
+        try:
+            sys_inst, contents = self._convert_to_gemini_format(messages)
+            response = self.gemini_client.models.generate_content(
+                model=self.fast_cloud_model,
+                contents=contents,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=sys_inst,
+                )
+            )
+            logger.info(f"LLM (Gemini Flash) response ({len(response.text)} chars)")
+            return response.text
+        except Exception as e:
+            logger.error(f"Gemini Fast cloud failed: {e}")
+            return self.chat_local(messages)
+
+    def chat_cloud_heavy(self, user_message: str, system_prompt: str | None = None, conversation_history: list[dict] | None = None) -> str:
+        """Hits the flagship Gemini Pro reasoning model for dense logic/coding tasks."""
+        if not self.gemini_client:
+            return self.chat_cloud_fast(user_message, system_prompt, conversation_history)
+            
+        prompt = system_prompt or self.system_prompt
+        messages = [{"role": "system", "content": prompt}]
+        if conversation_history:
+            messages.extend(conversation_history)
+        messages.append({"role": "user", "content": user_message})
+        
+        try:
+            sys_inst, contents = self._convert_to_gemini_format(messages)
+            response = self.gemini_client.models.generate_content(
+                model=self.reasoning_model,
+                contents=contents,
+                config=genai.types.GenerateContentConfig(
+                    system_instruction=sys_inst,
+                    temperature=0.7
+                )
+            )
+            logger.info(f"LLM (Gemini Heavy) response ({len(response.text)} chars)")
+            return response.text
+        except Exception as e:
+            logger.error(f"Gemini Heavy cloud failed: {e}")
+            return self.chat_cloud_fast(user_message, system_prompt, conversation_history)
 
     def _call_claude(self, messages: list[dict]) -> str:
         try:
@@ -82,23 +157,11 @@ class LLMCore:
             )
             response.raise_for_status()
             text = response.json()["content"][0]["text"].strip()
-            logger.info(f"LLM (Claude) response ({len(text)} chars): {text[:100]}...")
+            logger.info(f"LLM (Claude) response ({len(text)} chars)")
             return text
         except Exception as e:
             logger.error(f"Claude call failed: {e}")
-            logger.info("Falling back to Ollama")
-            return self._call_ollama_fallback(messages)
-
-    def _call_ollama_fallback(self, messages: list[dict]) -> str:
-        try:
-            response = self.client.chat(
-                model=self.local_model,
-                messages=messages,
-            )
-            return response["message"]["content"].strip()
-        except Exception as e:
-            logger.error(f"Ollama fallback also failed: {e}")
-            return "I'm having trouble connecting to my brain. Please try again."
+            return self.chat_local(messages)
 
     def is_complex_task(self, user_message: str) -> bool:
         complex_indicators = [
