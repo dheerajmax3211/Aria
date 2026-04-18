@@ -36,13 +36,15 @@ from jarvis.scheduler.jobs import SchedulerJobs
 from jarvis.scheduler.briefing import BriefingGenerator
 
 
-def setup_logging():
+def setup_logging() -> None:
+    """Configures the loguru logger with console and file handlers."""
     logger.remove()
     logger.add(sys.stderr, level="INFO", format="<green>{time:HH:mm:ss}</green> | <level>{level:<7}</level> | <level>{message}</level>")
     logger.add("logs/jarvis.log", rotation="10 MB", level="DEBUG", encoding="utf-8")
 
 
 def get_time_greeting() -> str:
+    """Returns an appropriate time-based greeting (morning, afternoon, or evening)."""
     hour = datetime.now().hour
     if hour < 12:
         return "morning"
@@ -52,7 +54,7 @@ def get_time_greeting() -> str:
         return "evening"
 
 
-def main():
+def main() -> None:
     setup_logging()
     logger.info(f"Starting {settings.jarvis_name}...")
     logger.info(f"User: {settings.user_name} | Location: {settings.user_location}")
