@@ -1,9 +1,34 @@
 import ollama
 import requests
 import re
+import time
+from functools import wraps
 from loguru import logger
 from google import genai
 from pydantic import BaseModel
+
+
+def retry_on_exception(retries: int = 2, delay: float = 1.5):
+    """
+    Standard decorator to retry a function if it raises an exception.
+    Adds a small sleep delay between attempts to handle transient network issues.
+    """
+    def decorator(func):
+        @wraps(func)
+        def wrapper(*args, **kwargs):
+            last_err = None
+            for attempt in range(retries):
+                try:
+                    return func(*args, **kwargs)
+                except Exception as e:
+                    last_err = e
+                    if attempt < retries - 1:
+                        logger.warning(f"Attempt {attempt + 1} failed for {func.__name__}: {e}. Retrying in {delay}s...")
+                        time.sleep(delay)
+            logger.error(f"All {retries} attempts failed for {func.__name__}.")
+            raise last_err
+        return wrapper
+    return decorator
 
 from jarvis.config import settings
 
@@ -80,6 +105,18 @@ class LLMCore:
                 contents.append({"role": role, "parts": [{"text": m["content"]}]})
         return system_instruction, contents
 
+    @retry_on_exception(retries=3, delay=1.0)
+    def _gemini_generate(self, model_name: str, contents: list, sys_inst: str, temperature: float | None = None):
+        """Helper to invoke Gemini with built-in retry logic."""
+        config = genai.types.GenerateContentConfig(system_instruction=sys_inst)
+        if temperature is not None:
+            config.temperature = temperature
+        return self.gemini_client.models.generate_content(
+            model=model_name,
+            contents=contents,
+            config=config
+        )
+
     def chat_cloud_fast(self, user_message: str, system_prompt: str | None = None, conversation_history: list[dict] | None = None) -> str:
         """Hits Gemini Flash for rapid classification or background processing."""
         if not self.gemini_client:
@@ -93,13 +130,7 @@ class LLMCore:
         
         try:
             sys_inst, contents = self._convert_to_gemini_format(messages)
-            response = self.gemini_client.models.generate_content(
-                model=self.fast_cloud_model,
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=sys_inst,
-                )
-            )
+            response = self._gemini_generate(self.fast_cloud_model, contents, sys_inst)
             logger.info(f"LLM (Gemini Flash) response ({len(response.text)} chars)")
             return response.text
         except Exception as e:
@@ -119,20 +150,14 @@ class LLMCore:
         
         try:
             sys_inst, contents = self._convert_to_gemini_format(messages)
-            response = self.gemini_client.models.generate_content(
-                model=self.reasoning_model,
-                contents=contents,
-                config=genai.types.GenerateContentConfig(
-                    system_instruction=sys_inst,
-                    temperature=0.7
-                )
-            )
+            response = self._gemini_generate(self.reasoning_model, contents, sys_inst, temperature=0.7)
             logger.info(f"LLM (Gemini Heavy) response ({len(response.text)} chars)")
             return response.text
         except Exception as e:
             logger.error(f"Gemini Heavy cloud failed: {e}")
             return self.chat_cloud_fast(user_message, system_prompt, conversation_history)
 
+    @retry_on_exception(retries=3, delay=1.0)
     def _call_claude(self, messages: list[dict]) -> str:
         try:
             system_msg = messages[0]["content"] if messages[0]["role"] == "system" else ""
